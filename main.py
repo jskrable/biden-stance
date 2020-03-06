@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 
 
 def get_lists():
+    print('scraping...')
     response = requests.get('https://www.ontheissues.org/joe_biden.htm')
     soup = BeautifulSoup(response.content)
     lists = soup.find_all('ul')
@@ -21,14 +22,14 @@ def get_lists():
 
 
 def get_quotes(issue):
-
+    print('retrieving quotes for ' + str(issue) + '...')
     topic = (' ').join(issue.parent.find('a').text.strip().split(' ')[4:])
     quotes = [q.text.strip() for q in issue.find_all('li')]
     return topic, quotes
 
 
 def get_random_stance(stances):
-
+    print('choosing random stance...')
     all_topics = stances.keys()
     topic = list(all_topics)[random.randint(0, len(all_topics))]
     quotes = [x for x in stances[topic] if len(x) < 140]
@@ -37,6 +38,7 @@ def get_random_stance(stances):
 
 
 def format_tweet(stance):
+    print('formatting tweet...')
     topic, quote = stance
     body = 'Joe Biden on ' + topic + ':\n\n' + quote
     hashtags = ' '.join(['#' + x.lower() for x in topic.split(' ') if len(x) > 3])
@@ -44,12 +46,14 @@ def format_tweet(stance):
 
 
 def get_creds():
+    print('getting twitter credentials...')    
     with open('twitter_creds.json') as f:
         creds = json.load(f)
     return creds
 
 
 def o_auth(creds):
+    print('authorizing...')
     api = twitter.Api(
         consumer_key=creds['consumer_key'],
         consumer_secret=creds['consumer_secret'],
@@ -58,7 +62,7 @@ def o_auth(creds):
     return api
 
 
-def create_tweet():
+def create_tweet(lists):
     lists = get_lists()
     stance_gen = (get_quotes(issue) for issue in lists)
     stances = {issue: quote for issue, quote in stance_gen}
@@ -67,17 +71,28 @@ def create_tweet():
 
 
 def post_tweet():
+    lists = get_lists()
     api = o_auth(get_creds())
     try:
-        api.PostUpdate(create_tweet())
+        print('posting tweet...')
+        status = api.PostUpdate(create_tweet(lists))
+        return status
     except Exception as e:
+        print(e)
         if e.message[0]['code'] == 187:
-            api.PostUpdate(create_tweet())
+            status = api.PostUpdate(create_tweet(lists))
+            return status
 
 
-def lambda_handler():
-    post_tweet()
-
-
-if __name__ == '__main__':
-    lambda_handler()
+def lambda_handler(event, lambda_context):
+    try:
+        status = post_tweet()
+        return {
+            'statusCode': 200,
+            'message': str(status)
+        }
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'message': str(e)
+        }
